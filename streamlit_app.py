@@ -5,6 +5,7 @@ import sys
 import io
 import docx
 import pandas as pd
+import google.generativeai as genai # この行を追加しました
 
 # --- データベース設定 ---
 
