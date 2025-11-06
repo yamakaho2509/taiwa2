@@ -2,3 +2,4 @@ streamlit
 google-generativeai
 google-generativeai
 python-docx
+st-supabase-connection
