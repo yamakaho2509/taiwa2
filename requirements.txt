@@ -1,5 +1,5 @@
 streamlit
-supabase
+st-supabase-connection
 python-docx
 pandas
 google-generativeai
