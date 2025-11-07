@@ -1,6 +1,6 @@
 import streamlit as st
 # import sqlite3 # sqlite3 は不要になったため削除
-from supabase import create_client, Client, APIError
+from supabase import create_client, Client
 import hashlib
 import sys
 import io
@@ -65,10 +65,10 @@ def add_user(supabase: Client, username, password):
             'is_admin': False
         }).execute()
         return True
-    except APIError as e:
+    #except APIError as e:
         # ユーザー名が既に存在する場合 (Unique constraint violation)
-        st.error(f"登録エラー: {e.message}")
-        return False
+        #st.error(f"登録エラー: {e.message}")
+        #return False
     except Exception as e:
         st.error(f"不明なエラーが発生しました: {e}")
         return False
