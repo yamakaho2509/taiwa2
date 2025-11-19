@@ -351,7 +351,7 @@ ARCS-Vモデルは、学習意欲を高めるための拡張版動機づけモ�
                 # ★★★ モデルの初期化（修正） ★★★
                 # system_instruction に上で定義したプロンプトを渡します。
                 model = genai.GenerativeModel(
-                    'gemini-2.5-flash-preview-05-20',
+                    'gemini-1.5-flash', # <--- ここを修正しました
                     system_instruction=system_prompt
                 )
 
