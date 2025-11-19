@@ -348,10 +348,10 @@ ARCS-Vモデルは、学習意欲を高めるための拡張版動機づけモ�
 * 最後の応答では、必ず対話の終了を告げ、**その日の学習の総括と簡単なフィードバック**を加えてください。
 """
                 
-                # ★★★ モデルの初期化（修正） ★★★
-                # system_instruction に上で定義したプロンプトを渡します。
+                # ★★★ モデルの初期化（再修正） ★★★
+                # 'models/' のプレフィックスを付けることで、APIバージョンv1betaでのモデル指定を正しくします。
                 model = genai.GenerativeModel(
-                    'gemini-1.5-flash', # <--- ここを修正しました
+                    'models/gemini-1.5-flash', # <--- 'models/' を追加して修正
                     system_instruction=system_prompt
                 )
 
