@@ -1,5 +1,4 @@
 import streamlit as st
-import streamlit.components.v1 as components # ★変更: JavaScript実行用コンポーネント
 # import sqlite3 # sqlite3 は不要になったため削除
 from supabase import create_client, Client
 import hashlib
@@ -23,20 +22,33 @@ def init_supabase_client():
         st.error("Supabase の URL または Key が Streamlit Secrets に設定されていません。")
         st.stop()
 
-# --- JavaScriptによるスクロール関数 (★追加) ---
-def scroll_to_bottom():
-    """JavaScriptを使用してページの最下部にスクロールする"""
-    js = """
-        <script>
-            var body = window.parent.document.body;
-            var footer = window.parent.document.querySelector('footer');
-            setTimeout(function() {
-                window.scrollTo({ top: body.scrollHeight, behavior: 'smooth' });
-            }, 100);
-        </script>
-    """
-    components.html(js, height=0)
+# main() の中で supabase クライアントを初期化
+# supabase = init_supabase_client()
 
+# --- データベース スキーマ (Supabase UI で手動設定) ---
+#
+# init_db() 関数は不要になりました。
+# Supabase のダッシュボードで以下のテーブルを手動で作成してください。
+#
+# 1. テーブル: users
+#    - id: bigint (Primary Key, Identity)
+#    - username: text (Unique)
+#    - password_hash: text
+#    - is_admin: boolean (Default: false)
+#
+# 2. テーブル: chat_history
+#    - id: bigint (Primary Key, Identity)
+#    - user_id: bigint (Foreign Key -> users.id)
+#    - role: text
+#    - content: text
+#    - timestamp: timestampz (Default: now())
+#
+# 3. 管理者アカウント (手動で users テーブルに追加)
+#    - username: 'adminkaho1020'
+#    - password_hash: 'adminkaho1020pw' を hash_password() でハッシュ化した値
+#    - is_admin: true
+#
+# --- 
 
 def hash_password(password):
     """パスワードをハッシュ化する (変更なし)"""
@@ -53,6 +65,10 @@ def add_user(supabase: Client, username, password):
             'is_admin': False
         }).execute()
         return True
+    #except APIError as e:
+        # ユーザー名が既に存在する場合 (Unique constraint violation)
+        #st.error(f"登録エラー: {e.message}")
+        #return False
     except Exception as e:
         st.error(f"不明なエラーが発生しました: {e}")
         return False
@@ -134,8 +150,8 @@ def admin_panel(supabase: Client): # supabase を引数として受け取る
 
             if st.button("このユーザーとしてログイン", key=f"login_as_{user['id']}"):
                 st.session_state['impersonating'] = True
-                st.session_state['admin_id'] = st.session_state['admin_id'] # 変更なし
-                st.session_state['admin_username'] = st.session_state['admin_username'] # 変更なし
+                st.session_state['admin_id'] = st.session_state['user_id']
+                st.session_state['admin_username'] = st.session_state['username']
                 st.session_state['user_id'] = user['id']
                 st.session_state['username'] = user['username']
                 st.session_state['is_admin'] = False
@@ -147,6 +163,7 @@ def admin_panel(supabase: Client): # supabase を引数として受け取る
 
 # --- メインアプリケーション ---
 def main():
+    # init_db() # データベースの初期化は不要
     
     # Supabase クライアントを初期化
     supabase = init_supabase_client()
@@ -220,6 +237,8 @@ def main():
         else:
             if st.session_state.get('impersonating', False):
                 st.info(f"現在、管理者として「{st.session_state.username}」でログインしています。")
+                # admin_panel 内で既に戻るボタンがあるので、ここでは不要かもしれません
+                # ただし、ロジックの一貫性のため残しておきます
                 if st.sidebar.button("管理者ビューに戻る"):
                     st.session_state.user_id = st.session_state.admin_id
                     st.session_state.username = st.session_state.admin_username
@@ -237,7 +256,8 @@ def main():
                 gemini_api_key = st.secrets["google_api_key"]
                 genai.configure(api_key=gemini_api_key)
                 
-                # ★★★ プロンプトの強制力を強化 ★★★
+                # ★★★ チャットボットの役割と指示（システムプロンプト） ★★★
+                # (ここに指示文を埋め込みます)
                 system_prompt = """
 あなたはユーザーアップロードしたファイル内の「学習目標」として記載されている分野の優秀な指導教員であり、孤独の中独学をする成人学習者の自己成長を支援するコーチとしての役割を担う親しみやすいチャットボットです。
 
@@ -305,10 +325,6 @@ AIとしての「すぐに解決策を提示したい」という欲求を抑え
             
             uploaded_file = st.file_uploader("ドキュメントをアップロードしてください", type=['txt', 'docx'])
 
-            # ファイルアップロード後のスクロール制御用セッションステート
-            if 'uploaded_file_processed' not in st.session_state:
-                st.session_state.uploaded_file_processed = False
-
             if "messages" not in st.session_state:
                 st.session_state.messages = get_messages_from_db(supabase, st.session_state.user_id) # supabase を渡す
             if "document_content" not in st.session_state:
@@ -327,11 +343,13 @@ AIとしての「すぐに解決策を提示したい」という欲求を抑え
                     st.success("ドキュメントが正常にアップロードされました。")
                     st.info("これで、ドキュメントの内容について質問できます。")
                     
+                    # ★★★ 初回プロンプトの修正 ★★★
+                    # システムプロンプトに従い、ステップ1の対話を開始するよう指示します。
                     initial_prompt = f"""
-あなたは指導教員/コーチです。
+あなたは今、システムプロンプト（役割定義）に従い、指導教員/コーチとして振る舞っています。
 学習者（ユーザー）が、以下の学習日記（ドキュメント）をアップロードしました。
-システムプロンプトの「フェーズ1（徹底的な内省）」に従い、最初の質問（Botラリー1）を行ってください。
-**まだ結論を急がないでください。**まずは日記の内容について深く興味を持ち、具体的な質問を投げかけてください。
+このドキュメントの内容（〜）を解釈し、システムプロンプトの「ステップ1の対話例」（A, B, Cのパターンがあります）を参考に、学習日記の内容に最も適した形で、最初の応答（Botラリー1）を生成してください。
+ワンパターンな質問ではなく、日記の内容に具体的に言及し、回答しやすい具体的な問いかけを心がけてください。
 
 ---
 学習日記（ドキュメント）:
@@ -342,71 +360,45 @@ AIとしての「すぐに解決策を提示したい」という欲求を抑え
 """
                     
                     with st.spinner("思考中です..."):
+                        # model.generate_content はシステムプロンプトを自動的に使用します
                         response = model.generate_content(initial_prompt)
                     
                     assistant_message = response.text
                     st.session_state.messages.append({"role": "assistant", "content": assistant_message})
-                    add_message_to_db(supabase, st.session_state['user_id'], "assistant", assistant_message)
-                    
-                    # フラグを立ててリロード
-                    st.session_state.uploaded_file_processed = True
+                    add_message_to_db(supabase, st.session_state['user_id'], "assistant", assistant_message) # supabase を渡す
                     st.rerun()
-
                  except Exception as e:
                     st.error(f"ファイルの読み込み中にエラーが発生しました: {e}")
 
-            # チャット履歴の表示
+
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-            
-            # ★変更: ファイルアップロード直後のスクロール実行
-            if st.session_state.uploaded_file_processed:
-                scroll_to_bottom()
-                st.session_state.uploaded_file_processed = False
 
             if prompt := st.chat_input("ドキュメントについて質問してください"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                add_message_to_db(supabase, st.session_state.user_id, "user", prompt)
+                add_message_to_db(supabase, st.session_state.user_id, "user", prompt) # supabase を渡す
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
                 try:
+                    # ★★★ 履歴構築の修正 ★★★
                     history = []
+                    
+                    # system_prompt は model 初期化時に渡しているので、ここでは不要です。
+                    
+                    # ユーザーのドキュメント（日記）を、毎回履歴の「最初」に
+                    # 「参考情報」として含めます。
                     document_context = f"参考：ユーザーの学習日記（ドキュメント）:\n{st.session_state.get('document_content', 'ドキュメントなし')}"
                     history.append({'role': 'user', 'parts': [document_context]})
                     history.append({'role': 'model', 'parts': ["（承知しました。学習日記を再度参照します。）"]})
 
-                    # 現在のラリー数を計算（システムメッセージを除く、User/Assistantのペア数）
-                    current_turn_count = len([m for m in st.session_state.messages if m["role"] == "user"])
-                    
-                    # ★重要: プロンプトに現在のターン数とフェーズの指示を注入
-                    phase_instruction = ""
-                    if current_turn_count <= 3:
-                        phase_instruction = f"""
-                        【システム指示: 現在は{current_turn_count}ラリー目です（フェーズ1）。】
-                        まだ結論やまとめに入らないでください。
-                        ユーザーの回答に対して「なぜ？」「具体的には？」と**深掘りする質問**を必ず一つ返してください。
-                        """
-                    elif current_turn_count <= 6:
-                         phase_instruction = f"""
-                        【システム指示: 現在は{current_turn_count}ラリー目です（フェーズ2）。】
-                        徐々に内省を自信に変えるフィードバックを行ってください。過去の履歴との比較も検討してください。
-                        """
-                    else:
-                         phase_instruction = f"""
-                        【システム指示: 現在は{current_turn_count}ラリー目です（フェーズ3）。】
-                        そろそろ次回の行動計画について聞き出し、クロージングに向かってください。
-                        """
-
-                    # 履歴の追加
+                    # 実際のチャット履歴を（ドキュメントの後に）追加
                     for msg in st.session_state.messages:
                         role = "user" if msg["role"] == "user" else "model"
                         history.append({'role': role, 'parts': [msg["content"]]})
                     
-                    # 最後にシステム指示を追加して送信（これが最も強く作用します）
-                    history.append({'role': 'user', 'parts': [phase_instruction]})
-
+                    # history の最後はユーザーのプロンプトのはずなので、Geminiに渡す
                     response_stream = model.generate_content(history, stream=True)
 
                     full_response = ""
@@ -420,17 +412,14 @@ AIとしての「すぐに解決策を提示したい」という欲求を抑え
                         message_placeholder.markdown(full_response)
                     
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
-                    add_message_to_db(supabase, st.session_state.user_id, "assistant", full_response)
-                    
-                    # ★変更: 対話完了後のスクロール実行
-                    scroll_to_bottom()
+                    add_message_to_db(supabase, st.session_state.user_id, "assistant", full_response) # supabase を渡す
 
                 except Exception as e:
                     st.error("エラーが発生しました。詳細はコンソールを確認してください。")
                     print(f"エラーの詳細: {e}", file=sys.stderr)
                     error_message = "申し訳ありません、応答の生成中にエラーが発生しました。"
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
-                    add_message_to_db(supabase, st.session_state.user_id, "assistant", error_message)
+                    add_message_to_db(supabase, st.session_state.user_id, "assistant", error_message) # supabase を渡す
             
             # --- エクスポート機能 (変更なし) ---
             st.sidebar.header("エクスポート")
