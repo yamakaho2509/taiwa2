@@ -82,7 +82,6 @@ def get_messages_from_db(supabase: Client, user_id):
         st.error(f"履歴取得エラー: {e}")
         return []
 
-# ★★★ 新規追加：過去データの取得（プレースホルダー） ★★★
 def get_past_learning_record(supabase: Client, user_id):
     """
     過去の学習記録を取得する。
@@ -137,19 +136,16 @@ def admin_panel(supabase: Client):
                     del st.session_state['viewing_messages']
                 st.rerun()
 
-
 # --- メインアプリケーション ---
 def main():
     supabase = init_supabase_client()
 
-    # セッション状態の初期化
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
         st.session_state.username = ""
         st.session_state.user_id = None
         st.session_state.is_admin = False
 
-    # --- ログイン/新規登録UI (サイドバー) ---
     if not st.session_state.logged_in:
         st.sidebar.title("ユーザー認証")
         choice = st.sidebar.selectbox("メニュー", ["ログイン", "新規登録"])
@@ -189,7 +185,6 @@ def main():
                 del st.session_state[key]
             st.rerun()
 
-    # --- ログインしている場合のみアプリ本体を表示 ---
     if st.session_state.logged_in:
         if st.session_state.is_admin and not st.session_state.get('impersonating', False):
             admin_panel(supabase) 
@@ -218,7 +213,6 @@ def main():
                         del st.session_state['viewing_messages']
                     st.rerun()
             
-            # --- チャットアプリ本体 ---
             st.title("💬 チャットボットと学びを振り返ろう！")
             st.write("記入済みの学習日記フォーマットをDOCS形式でアップロードすると、その内容に関する対話ができます！")
 
@@ -226,7 +220,7 @@ def main():
                 gemini_api_key = st.secrets["google_api_key"]
                 genai.configure(api_key=gemini_api_key)
                 
-                # ★★★ ベースシステムプロンプトの定義（変数を埋め込める形） ★★★
+                # ★★★ ベースシステムプロンプト（目標立ち返り＆URL誘導を追加） ★★★
                 base_system_prompt = """
 あなたはユーザーがアップロードしたファイル内の「学習目標」に精通した優秀な指導教員であり、独学する成人学習者の自己成長を支援する親しみやすいコーチングチャットボットです。
 
@@ -256,8 +250,9 @@ def main():
     - 目的：過去の自分（<past_learning_record>）と比較し、成長を実感させる。
     - 義務：必ず「前回の課題であった〇〇が、今回は△△になっていますね」と言及すること。
 
-* **フェーズ3（7往復目以降、または終了希望時）：行動への橋渡し（Step 3）**
-    - 目的：次回の具体的な一歩（Volition）を決め、ポジティブに締めくくる。
+* **フェーズ3（7往復目以降、または終了希望時）：目標の再確認とクロージング（Step 3）**
+    - 目的：ドキュメント内の「学習目標」が現在も適切か確認し、次回の行動（Volition）を決める。
+    - 義務：目標の調整が必要な場合は、指定の目標設定アプリ（URL）を案内すること。
 
 ---
 
@@ -273,8 +268,12 @@ def main():
 2. **成長の承認:** 「今回は[今回の気づき]ができていますね！素晴らしい進歩です。」
 ※データが「データなし」の場合は、本日の対話の冒頭の発言と比較してください。
 
-#### 【ステップ3：意思確認とクロージング】
-次回の学習に向けた具体的な行動計画をユーザーに宣言させ、「次回も楽しみにしています！」とポジティブに終了します。
+#### 【ステップ3：目標の再確認とクロージング】
+次回の具体的な行動計画を決める前に、**アップロードされたドキュメント内の「学習目標」に言及し**、以下の対応を行ってください。
+1. **目標の確認:** 「現在の目標（〇〇）に対して、このまま進めて良いか、それとも目標自体の調整や練り直しが必要か」をユーザーに確認する。
+2. **URLの案内:** もしユーザーが「目標の調整や練り直しが必要だ」と判断した場合は、「では、一度目標設定をリセットしましょう」と伝え、**必ず以下のURLを案内**して再設定を勧めてください。
+   - 目標設定用チャットボット： https://learninggoal-chatbot.streamlit.app/
+3. **クロージング:** 最後に、次回のアクション（学習の継続、または目標の再設定）を宣言させ、「次回も楽しみにしています！」とポジティブに終了します。
 
 ---
 
@@ -294,7 +293,6 @@ def main():
             if "document_content" not in st.session_state:
                 st.session_state.document_content = None
 
-            # --- ファイルアップロード時の処理（初回起動） ---
             if uploaded_file is not None and st.session_state.document_content is None:
                  try:
                     if uploaded_file.type == 'text/plain':
@@ -323,13 +321,12 @@ def main():
 """
                     
                     with st.spinner("思考中です..."):
-                        # ★★★ 初回のモデル初期化（デフォルト値を代入） ★★★
                         p_data = get_past_learning_record(supabase, st.session_state.user_id)
                         current_system_prompt = base_system_prompt.format(
                             past_challenge=p_data['challenge'],
                             past_achievement=p_data['achievement'],
-                            input_length_status="適切", # 初回は適切とする
-                            fatigue_flag="OFF"          # 初回は疲労なし
+                            input_length_status="適切",
+                            fatigue_flag="OFF"
                         )
                         model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=current_system_prompt)
                         response = model.generate_content(initial_prompt)
@@ -341,12 +338,10 @@ def main():
                  except Exception as e:
                     st.error(f"ファイルの読み込み中にエラーが発生しました: {e}")
 
-            # --- 既存のメッセージを表示 ---
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
 
-            # --- ユーザーの入力があった場合の処理 ---
             if prompt := st.chat_input("ドキュメントについて質問してください"):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 add_message_to_db(supabase, st.session_state.user_id, "user", prompt) 
@@ -354,16 +349,12 @@ def main():
                     st.markdown(prompt)
 
                 try:
-                    # ★★★ 疲労検知＆文字数判定ロジック ★★★
                     input_len = len(prompt)
                     input_length_status = "短い" if input_len < 10 else "適切"
                     
-                    # session_state.messages にはユーザーとAIの会話が蓄積されているため、
-                    # length が 6 以上であれば（最低でも3往復目に入っている）
                     session_turn_count = len(st.session_state.messages)
                     fatigue_flag = "ON" if (input_len < 10 and session_turn_count >= 6) else "OFF"
 
-                    # ★★★ 過去データの取得とプロンプトの動的生成 ★★★
                     p_data = get_past_learning_record(supabase, st.session_state.user_id)
                     dynamic_system_prompt = base_system_prompt.format(
                         past_challenge=p_data['challenge'],
@@ -372,10 +363,8 @@ def main():
                         fatigue_flag=fatigue_flag
                     )
 
-                    # ★★★ モデルを最新のシステムプロンプトで再初期化 ★★★
                     model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=dynamic_system_prompt)
 
-                    # 履歴構築
                     history = []
                     document_context = f"参考：ユーザーの学習日記（ドキュメント）:\n{st.session_state.get('document_content', 'ドキュメントなし')}"
                     history.append({'role': 'user', 'parts': [document_context]})
@@ -385,7 +374,6 @@ def main():
                         role = "user" if msg["role"] == "user" else "model"
                         history.append({'role': role, 'parts': [msg["content"]]})
                     
-                    # 生成
                     response_stream = model.generate_content(history, stream=True)
 
                     full_response = ""
@@ -408,7 +396,6 @@ def main():
                     st.session_state.messages.append({"role": "assistant", "content": error_message})
                     add_message_to_db(supabase, st.session_state.user_id, "assistant", error_message) 
             
-            # --- エクスポート機能 ---
             st.sidebar.header("エクスポート")
             doc = docx.Document()
             doc.add_heading(f'{st.session_state["username"]}さんの振り返り', 0)
